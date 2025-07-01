@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>맥도날드 키오스크 통합버전</title>
+  <style>
+    :root {
+      --base-font-size: 24px;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #fff8dc;
+      text-align: center;
+      padding: 20px;
+      font-size: var(--base-font-size);
+    }
+    h1 {
+      background-color: #ffcc00;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    .hidden { display: none; }
+    .menu, .confirm, .payment, .receipt, .popup, .start {
+      display: none;
+    }
+    .item {
+      background-color: #fff;
+      border: 3px solid #e60000;
+      padding: 20px;
+      border-radius: 10px;
+      width: 250px;
+      margin: 10px auto;
+      cursor: pointer;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 22px;
+      margin: 10px;
+      border-radius: 8px;
+      border: none;
+      background-color: #e60000;
+      color: white;
+      cursor: pointer;
+    }
+    .delete-btn { background-color: #999; }
+    .pay-btn { background-color: green; }
+    .reset-btn { background-color: #444; }
+    .popup {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    .popup-content {
+      background: white;
+      padding: 20px;
+      border-radius: 15px;
+      width: 400px;
+      max-height: 90vh; 
+      overflow-y: auto;   
+      text-align: left;
+    }
+    .popup-content img {
+      width: 100%;
+      max-height: 200px;        /* 최대 높이 제한 */
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .desc { font-size: 18px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>🍔 맥도날드 키오스크</h1>
+
+  <div class="start" id="start">
+    <h2>먹고 가시겠어요? 포장하시겠어요?</h2>
+    <button onclick="selectType('매장')">🍽 먹고가기</button>
+    <button onclick="selectType('포장')">🥡 포장하기</button>
+  </div>
+
+  <div class="menu" id="menu">
+    <h2 id="typeLabel"></h2>
+    <div class="item" onclick="openPopup(0)">불고기버거</div>
+    <div class="item" onclick="openPopup(1)">치즈버거</div>
+    <div class="item" onclick="openPopup(2)">감자튀김</div>
+    <div class="item" onclick="openPopup(3)">콜라</div>
+    <button class="pay-btn" onclick="goToConfirm()">주문 확인</button>
+  </div>
+
+  <div class="popup" id="popup">
+    <div class="popup-content">
+      <h2 id="popup-title"></h2>
+      <img id="popup-img" src="" />
+      <p class="desc" id="popup-desc"></p>
+      <p id="popup-price"></p>
+      <label>사이즈:
+        <select id="popup-size" onchange="updatePrice()">
+          <option value="미디엄">미디엄</option>
+          <option value="라지">라지 (+500원)</option>
+        </select>
+      </label><br><br>
+      <label>수량:
+        <input type="number" id="popup-qty" value="1" min="1" onchange="updatePrice()" />
+      </label><br><br>
+      <p><strong>총 가격: <span id="popup-total"></span> 원</strong></p>
+      <button onclick="addToCart()">장바구니 담기</button>
+      <button onclick="closePopup()">닫기</button>
+    </div>
+  </div>
+
+  <div class="confirm" id="confirm">
+    <h2>🧾 주문 확인</h2>
+    <div id="confirm-items"></div>
+    <p><strong>총합: <span id="confirm-total">0</span> 원</strong></p>
+    <button onclick="startPayment()">결제하기</button>
+    <button onclick="goToMenu()">← 메뉴로</button>
+  </div>
+
+  <div class="payment" id="payment">
+    <h2>결제 수단을 선택해주세요</h2>
+    <p>⏳ 남은 시간: <span id="timer">30</span>초</p>
+    <button onclick="pay('카드')">💳 카드 결제</button>
+    <button onclick="pay('현금')">💵 현금 결제</button>
+  </div>
+
+  <div class="receipt" id="receipt">
+    <h2>✅ 결제 완료</h2>
+    <div id="receipt-items"></div>
+    <p><strong>총합: <span id="receipt-total">0</span> 원</strong></p>
+    <p><strong>결제수단: <span id="receipt-method"></span></strong></p>
+    <p><strong>이용방법: <span id="receipt-type"></span></strong></p>
+    <button class="reset-btn" onclick="resetAll()">🔁 처음으로</button>
+  </div>
+
+  <script>
+    const menuData = [
+      {
+        name: '불고기버거',
+        price: 3500,
+        img: 'meatBurger.JPG',
+        desc: '불향 가득한 패티와 마요의 조화'
+      },
+      {
+        name: '치즈버거',
+        price: 4000,
+        img: 'cheeseBurger.jpg',
+        desc: '치즈와 패티의 고소한 클래식'
+      },
+      {
+        name: '감자튀김',
+        price: 2000,
+        img: 'potato.JPG',
+        desc: '바삭한 시그니처 감튀'
+      },
+      {
+        name: '콜라',
+        price: 1500,
+        img: 'cola.JPG',
+        desc: '톡 쏘는 청량한 맛'
+      }
+    ];
+    let cart = [];
+    let selectedType = '';
+    let currentItem = {};
+    let countdown;
+
+    document.getElementById("start").style.display = "block";
+
+    function selectType(type) {
+      selectedType = type;
+      document.getElementById("start").style.display = "none";
+      document.getElementById("menu").style.display = "block";
+      document.getElementById("typeLabel").innerText = "이용 방법: " + type;
+    }
+
+    function openPopup(index) {
+      currentItem = menuData[index];
+      document.getElementById("popup-title").innerText = currentItem.name;
+      document.getElementById("popup-img").src = currentItem.img;
+      document.getElementById("popup-desc").innerText = currentItem.desc;
+      document.getElementById("popup-price").innerText = `기본 가격: ${currentItem.price}원`;
+      document.getElementById("popup-size").value = '미디엄';
+      document.getElementById("popup-qty").value = 1;
+      updatePrice();
+      document.getElementById("popup").style.display = "flex";
+    }
+
+    function closePopup() {
+      document.getElementById("popup").style.display = "none";
+    }
+
+    function updatePrice() {
+      const size = document.getElementById("popup-size").value;
+      const qty = parseInt(document.getElementById("popup-qty").value);
+      let price = currentItem.price;
+      if (size === '라지') price += 500;
+      document.getElementById("popup-total").innerText = price * qty;
+    }
+
+    function addToCart() {
+      const size = document.getElementById("popup-size").value;
+      const qty = parseInt(document.getElementById("popup-qty").value);
+      let price = currentItem.price;
+      if (size === '라지') price += 500;
+      cart.push({ name: currentItem.name, size, qty, total: price * qty });
+      closePopup();
+    }
+
+    function goToConfirm() {
+      if (cart.length === 0) return alert("장바구니가 비어 있어요!");
+      document.getElementById("menu").style.display = "none";
+      document.getElementById("confirm").style.display = "block";
+      const confirmItems = document.getElementById("confirm-items");
+      confirmItems.innerHTML = '';
+      let total = 0;
+      cart.forEach(item => {
+        confirmItems.innerHTML += `<p>${item.name} (${item.size}) x ${item.qty} = ${item.total}원</p>`;
+        total += item.total;
+      });
+      document.getElementById("confirm-total").innerText = total;
+    }
+
+    function goToMenu() {
+      document.getElementById("confirm").style.display = "none";
+      document.getElementById("menu").style.display = "block";
+    }
+
+    function startPayment() {
+      document.getElementById("confirm").style.display = "none";
+      document.getElementById("payment").style.display = "block";
+      let time = 30;
+      document.getElementById("timer").innerText = time;
+      countdown = setInterval(() => {
+        time--;
+        document.getElementById("timer").innerText = time;
+        if (time <= 0) {
+          clearInterval(countdown);
+          alert("⏰ 시간이 초과되어 주문이 취소되었습니다.");
+          resetAll();
+        }
+      }, 1000);
+    }
+
+    function pay(method) {
+      clearInterval(countdown);
+      document.getElementById("payment").style.display = "none";
+      document.getElementById("receipt").style.display = "block";
+      const receiptItems = document.getElementById("receipt-items");
+      receiptItems.innerHTML = '';
+      let total = 0;
+      cart.forEach(item => {
+        receiptItems.innerHTML += `<p>${item.name} (${item.size}) x ${item.qty} = ${item.total}원</p>`;
+        total += item.total;
+      });
+      document.getElementById("receipt-total").innerText = total;
+      document.getElementById("receipt-method").innerText = method;
+      document.getElementById("receipt-type").innerText = selectedType;
+    }
+
+    function resetAll() {
+      cart = [];
+      selectedType = '';
+      clearInterval(countdown);
+      document.querySelectorAll(".start, .menu, .confirm, .payment, .receipt").forEach(e => e.style.display = "none");
+      document.getElementById("start").style.display = "block";
+    }
+  </script>
+</body>
+</html>
